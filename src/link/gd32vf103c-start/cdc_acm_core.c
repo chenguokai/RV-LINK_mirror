@@ -47,6 +47,14 @@ __IO uint8_t packet_sent = 1U;
 __IO uint8_t packet_receive = 1U;
 __IO uint32_t  receive_length = 0U;
 
+__IO uint8_t packet_sent1 = 1U;
+__IO uint8_t packet_receive1 = 1U;
+__IO uint32_t  receive_length1 = 0U;
+
+__IO uint8_t packet_sent2 = 1U;
+__IO uint8_t packet_receive2 = 1U;
+__IO uint32_t  receive_length2 = 0U;
+
 //usbd_int_cb_struct *usbd_int_fops = NULL;
 
 typedef struct
@@ -606,6 +614,20 @@ uint8_t cdc_acm_data_out_handler (usb_dev *pudev, uint8_t ep_id)
 
         return USBD_OK;
     }
+    else if ((CDC_ACM1_DATA_OUT_EP & 0x7F) == ep_id)
+    {
+        packet_receive1 = 1;
+        receive_length1 = usbd_rxcount_get(pudev, CDC_ACM1_DATA_OUT_EP);
+
+        return USBD_OK;
+    }
+    else if ((CDC_ACM2_DATA_OUT_EP & 0x7F) == ep_id)
+    {
+        packet_receive2 = 1;
+        receive_length2 = usbd_rxcount_get(pudev, CDC_ACM2_DATA_OUT_EP);
+
+        return USBD_OK;
+    }
     return USBD_FAIL;
 }
 
@@ -622,6 +644,28 @@ uint8_t cdc_acm_data_in_handler (usb_dev *pudev, uint8_t ep_id)
         }
         return USBD_OK;
     } 
+    else if ((CDC_ACM1_DATA_IN_EP & 0x7F) == ep_id)
+    {
+        usb_transc *transc = &pudev->dev.transc_in[EP_ID(ep_id)];
+
+        if ((transc->xfer_len % transc->max_len == 0) && (transc->xfer_len != 0)) {
+            usbd_ep_send (pudev, ep_id, NULL, 0U);
+        } else {
+            packet_sent1 = 1;
+        }
+        return USBD_OK;
+    }
+    else if ((CDC_ACM2_DATA_IN_EP & 0x7F) == ep_id)
+    {
+        usb_transc *transc = &pudev->dev.transc_in[EP_ID(ep_id)];
+
+        if ((transc->xfer_len % transc->max_len == 0) && (transc->xfer_len != 0)) {
+            usbd_ep_send (pudev, ep_id, NULL, 0U);
+        } else {
+            packet_sent2 = 1;
+        }
+        return USBD_OK;
+    }
     return USBD_FAIL;
 }
 
@@ -649,7 +693,9 @@ uint8_t cdc_acm_req_handler (usb_dev *pudev, usb_req *req)
             break;
         case SET_LINE_CODING:
             /* set the value of the current command to be processed */
-            cdc_cmd = req->bRequest;
+            if(req->wIndex == 0x02) {
+                cdc_cmd = SET_LINE_CODING;
+            }
             /* enable EP0 prepare to receive command data packet */
             pudev->dev.transc_out[0].xfer_buf = usb_cmd_buffer;
             pudev->dev.transc_out[0].remain_len = req->wLength;
@@ -713,7 +759,7 @@ void cdc_acm_data_send (usb_dev *pudev, uint32_t data_len)
 */
 uint8_t cdc_acm_EP0_RxReady (usb_dev *pudev)
 {
-    if (NO_CMD != cdc_cmd) {
+    if (SET_LINE_CODING == cdc_cmd) {
         /* process the command data */
         linecoding.dwDTERate = (uint32_t)(usb_cmd_buffer[0] | 
                                          (usb_cmd_buffer[1] << 8) |
@@ -725,6 +771,9 @@ uint8_t cdc_acm_EP0_RxReady (usb_dev *pudev)
         linecoding.bDataBits = usb_cmd_buffer[6];
 
         cdc_cmd = NO_CMD;
+
+        void serial1_set_line_coding(uint32_t baudrate, uint32_t data_bits, uint32_t stop_bits, uint32_t parity);
+        serial1_set_line_coding(linecoding.dwDTERate, linecoding.bDataBits, linecoding.bCharFormat, linecoding.bParityType);
     }
 
     return USBD_OK;
